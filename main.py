@@ -7,7 +7,7 @@ import hydra
 import ray
 
 from verl.trainer.ppo.reward import get_custom_reward_fn
-from .dapo_ray_trainer import RayDAPOTrainer
+from .my_ray_trainer import RayDAPOTrainer
 
 
 @hydra.main(config_path="config", config_name="dapo_quant", version_base=None)

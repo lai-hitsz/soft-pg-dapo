@@ -66,7 +66,7 @@ class WeightQuantizer(nn.Module):
         scale = scale.clamp(min=CLIPMIN)
         zero_point = -(xmin / scale)
 
-        x_fp = x / scale + zero_point
+        x_fp = (x - xmin) / scale
 
         # ---- base rounding (full bits) ----
         if soft_round_enable:
@@ -95,7 +95,7 @@ class WeightQuantizer(nn.Module):
             x_c = x_c.clamp(self.qmin, qmax_eff)
             x_int = x_c * delta
 
-        x_dequant = (x_int - zero_point) * scale
+        x_dequant = x_int * scale + xmin
         return x_dequant.reshape(dim1, dim2)
 
     def forward(self, x: torch.Tensor, **kwargs):
