@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -45,7 +46,7 @@ class WeightQuantizer(nn.Module):
 
         self.duration = None
         if t_bits >= 2 and t_bits <= s_bits:
-            self.duration = self.qmax_full / self.qmax_final
+            self.duration = self.qmax_full - self.qmax_final
 
     def fake_quant(
         self,
@@ -64,36 +65,27 @@ class WeightQuantizer(nn.Module):
         xmax = x.amax(dim=-1, keepdim=True)
         scale = (xmax - xmin) / (self.qmax_full - self.qmin)
         scale = scale.clamp(min=CLIPMIN)
-        zero_point = -(xmin / scale)
 
         x_fp = (x - xmin) / scale
 
+        # ---- progressive quantization ----
+        if progressive_enable:
+            qmax_eff = int(
+                math.ceil(
+                    self.qmax_full
+                    - progressive_ratio * self.duration
+                )
+            )
+        else:
+            qmax_eff = self.qmax_full
+
         # ---- base rounding (full bits) ----
         if soft_round_enable:
-            x_int = round_soft(x_fp, self.qmax_full)
+            x_int = round_soft(x_fp, qmax_eff)
         else:
             x_int = round_ste(x_fp)
 
-        x_int = x_int.clamp(self.qmin, self.qmax_full)
-
-        # ---- progressive quantization ----
-        if progressive_enable:
-            assert self.duration
-            delta = 1.0 + progressive_ratio * (self.duration - 1.0)
-
-            qmax_eff = torch.floor(
-                x.new_tensor(self.qmax_full / delta)
-            )
-
-            x_c = x_int / delta
-
-            if soft_round_enable:
-                x_c = round_soft(x_c, int(qmax_eff.item()))
-            else:
-                x_c = round_ste(x_c)
-
-            x_c = x_c.clamp(self.qmin, qmax_eff)
-            x_int = x_c * delta
+        x_int = x_int.clamp(self.qmin, qmax_eff)
 
         x_dequant = x_int * scale + xmin
         return x_dequant.reshape(dim1, dim2)
@@ -152,5 +144,40 @@ class StepAwareFakeLinear(nn.Module):
             progressive_enable=bool(self.progressive_enable.item()),
             progressive_ratio=self.progressive_ratio.item(),
         )
-        return F.linear(input, weight_q, self.bias)
+        return F.linear(input, weight_q, self.bias)    
+    
 
+@torch.no_grad()
+def convert_to_fake_quant(
+    model: nn.Module,
+    wbits: int = 4,
+    group_size: int = 128,
+    use_pg: bool | None = None,
+    tbits: int = 0,
+):
+    named_modules = dict(model.named_modules())
+    weight_quant = WeightQuantizer(
+        s_bits=wbits,
+        t_bits=tbits,
+        group_size=group_size
+    )
+
+    def fake_quant_weight(w: torch.Tensor) -> torch.Tensor:
+        """
+        w: [out, in]
+        return: fake-quantized w, still float tensor
+        """
+        w_q = weight_quant(w, progressive_enable=use_pg, progressive_ratio=1, soft_round_enable=False)
+        return w_q
+
+    for name, module in list(named_modules.items()):
+        if not isinstance(module, nn.Linear):
+            continue
+        if "lm_head" in name:
+            continue
+
+        w = module.weight.data
+        w_q = fake_quant_weight(w)
+        module.weight.data.copy_(w_q)
+
+    return model

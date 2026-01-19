@@ -60,9 +60,10 @@ class RayDAPOTrainer(RayPPOTrainer):
         num_prompt_in_batch = 0
         num_gen_batches = 0
 
-        quant_controller = QuantizationController(self.config.quant)
-        quant_state = quant_controller.get_state(self.global_steps)
-        self.actor_rollout_wg.set_quant_state(quant_state)
+        quant_controller = QuantizationController(self.config.actor_rollout_ref.quant)
+        if quant_controller.enable:
+            quant_state = quant_controller.get_state(self.global_steps)
+            self.actor_rollout_wg.set_quant_state(quant_state)
 
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
@@ -291,5 +292,6 @@ class RayDAPOTrainer(RayPPOTrainer):
                 progress_bar.update(1)
                 self.global_steps += 1
 
-                quant_state = quant_controller.get_state(self.global_steps)
-                self.actor_rollout_wg.set_quant_state(quant_state)
+                if quant_controller.enable:
+                    quant_state = quant_controller.get_state(self.global_steps)
+                    self.actor_rollout_wg.set_quant_state(quant_state)

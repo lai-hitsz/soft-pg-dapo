@@ -2,7 +2,7 @@
 set -xeuo pipefail
 
 project_name='MY-DAPO'
-exp_name='AWQ-w4g128-STE-Only'
+exp_name='Llama3.2-1B-AWQ-w4g128-Soft-Only'
 
 adv_estimator=grpo
 
@@ -37,7 +37,7 @@ RUNTIME_ENV=${RUNTIME_ENV:-"${WORKING_DIR}/verl/trainer/runtime_env.yaml"}
 NNODES=${NNODES:-1}
 # Paths
 RAY_DATA_HOME=${RAY_DATA_HOME:-"/root/lai-code/verl"}
-MODEL_PATH=${MODEL_PATH:-"/root/lai-code/prime_model/fake_quant_model"}
+MODEL_PATH=${MODEL_PATH:-"/root/lai-code/quant_models/llama3.2-1b/fake_quant_model"}
 CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
 TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/dapomath17k_dedup.parquet"}
 TEST_FILE=${TEST_FILE:-"${RAY_DATA_HOME}/data/aime-2024.parquet"}

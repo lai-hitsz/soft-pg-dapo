@@ -182,6 +182,20 @@ class QuantActorRolloutRefWorker(ActorRolloutRefWorker):
                 use_fused_kernels=use_fused_kernels,
             )
 
+            # =============================================== #
+            if quant_config.enable:
+                dst_kwargs={"s_bits": int(quant_config.bits.start), "t_bits": int(quant_config.bits.target),
+                "group_size": int(quant_config.group_size)}
+                replace_modules(
+                    actor_module,
+                    src_type=torch.nn.Linear,
+                    dst_type=StepAwareFakeLinear,
+                    dst_kwargs=dst_kwargs,
+                    skip_names=("lm_head",),
+                    verbose=True,
+                )
+            # =============================================== #
+
             # some parameters may not in torch_dtype. TODO(zhangchi.usc1992) remove this after we switch to fsdp2
             actor_module.to(torch_dtype)
 
@@ -194,19 +208,6 @@ class QuantActorRolloutRefWorker(ActorRolloutRefWorker):
                 lora_config = {"task_type": TaskType.CAUSAL_LM, "r": self.config.model.lora_rank, "lora_alpha": self.config.model.lora_alpha, "target_modules": convert_to_regular_types(self.config.model.target_modules), "bias": "none"}
                 actor_module = get_peft_model(actor_module, LoraConfig(**lora_config))
         torch.distributed.barrier()
-
-        # =============================================== #
-        dst_kwargs={"s_bits": int(quant_config.bits.start), "t_bits": int(quant_config.bits.target),
-        "group_size": int(quant_config.group_size)}
-        replace_modules(
-            actor_module,
-            src_type=torch.nn.Linear,
-            dst_type=StepAwareFakeLinear,
-            dst_kwargs=dst_kwargs,
-            skip_names=("lm_head",),
-            verbose=False,
-        )
-        # =============================================== #
 
         if self.rank == 0:
             print_model_size(actor_module)
@@ -334,15 +335,25 @@ class QuantActorRolloutRefWorker(ActorRolloutRefWorker):
         rollout_name = self.config.rollout.name
         if rollout_name == "hf":
             from verl.workers.rollout import HFRollout
-            from verl.workers.sharding_manager.base import BaseShardingManager
+            # from verl.workers.sharding_manager.base import BaseShardingManager
+            from .my_hf_manager import FSDPHFShardingManager
 
+            full_params = torch.distributed.get_world_size() == 1
             rollout = HFRollout(module=self.actor_module_fsdp, config=self.config.rollout)
-            rollout_sharding_manager = BaseShardingManager()
-            # TODO: a sharding manager that do nothing?
+            rollout_sharding_manager = FSDPHFShardingManager(
+                module=self.actor_module_fsdp,
+                model_config=self.actor_model_config,
+                full_params=full_params,
+                device_mesh=rollout_device_mesh,
+                offload_param=self._is_offload_param,
+                load_format=self.config.rollout.load_format,
+                layered_summon=self.config.rollout.get("layered_summon", False),)
+            log_gpu_memory_usage("After building sharding manager", logger=logger)
+
 
         elif rollout_name == "vllm":
             from verl.workers.rollout.vllm_rollout import vllm_mode, vLLMRollout
-            from verl.workers.sharding_manager.fsdp_vllm import FSDPVLLMShardingManager
+            from .my_vllm_manager import FSDPVLLMShardingManager
 
             log_gpu_memory_usage(f"Before building {rollout_name} rollout", logger=logger)
             local_path = copy_to_local(self.config.model.path, use_shm=self.config.model.get("use_shm", False))
@@ -369,6 +380,7 @@ class QuantActorRolloutRefWorker(ActorRolloutRefWorker):
                 offload_param=self._is_offload_param,
                 load_format=self.config.rollout.load_format,
                 layered_summon=self.config.rollout.get("layered_summon", False),
+                fake_quant_weight=self.config.quant.enable
             )
             log_gpu_memory_usage("After building sharding manager", logger=logger)
 

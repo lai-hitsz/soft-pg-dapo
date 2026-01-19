@@ -30,25 +30,26 @@ trainer:
 # =========================
 # 新增的部分
 # =========================
-quant:
-  enable: True
-  group_size: 128
-
-  # ===== bits 配置 =====
-  bits:
-    start: 4
-    enable_progressive: False
-    target: 2
-    begin_pg: 100
-    pg_duration: 100
-
-  # ===== soft-round 配置 =====
-  soft_round:
+actor_rollout_ref:
+  quant:
     enable: True
+    group_size: 128
 
-  # ===== 模块选择 =====
-  modules:
-    linear: True
-    lm_head: False
+    # ===== bits 配置 =====
+    bits:
+      start: 4
+      enable_progressive: True
+      target: 2
+      begin_pg: 80
+      pg_duration: 180
+
+    # ===== soft-round 配置 =====
+    soft_round:
+      enable: True
+
+    # ===== 模块选择 =====
+    modules:
+      linear: True
+      lm_head: False
 
 

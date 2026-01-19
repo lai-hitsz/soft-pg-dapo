@@ -25,7 +25,7 @@ class QuantizationController:
         # ===== nominal bits =====
         bits_cfg = quant_cfg.get("bits", {})
         self.begin_pg = int(bits_cfg.get("begin_pg", 0))
-        self.pg_duration = int(bits_cfg.get("pg_duration", 100))  # duration for ratio 0->1
+        self.pg_duration = int(bits_cfg.get("pg_duration", 200))  # duration for ratio 0->1
         self.enable_progressive = bool(bits_cfg.get("enable_progressive", False))
 
         # ===== soft-round =====
@@ -64,7 +64,8 @@ class QuantizationController:
         if not prog_active and not soft_active:
             return QuantState(
                 soft_round_enable=False,
-                progressive_enable=False
+                progressive_enable=False,
+                progressive_ratio=prog_ratio
             )
 
         # ---- 10: progressive 1, soft 0 ----
@@ -80,7 +81,8 @@ class QuantizationController:
             # soft_step = self._compute_soft_round_step(global_step)
             return QuantState(
                 soft_round_enable=True,
-                progressive_enable=False
+                progressive_enable=False,
+                progressive_ratio=prog_ratio
             )
 
         # ---- 11: progressive 1, soft 1 ----

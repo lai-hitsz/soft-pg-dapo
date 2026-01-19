@@ -2,7 +2,7 @@
 set -xeuo pipefail
 
 project_name='MY-DAPO'
-exp_name='AWQ-w4g128-STE-Only'
+exp_name='Qwen3-4B-AWQ-w4g128-Soft-Progress-2bit-from-0'
 
 adv_estimator=grpo
 
@@ -24,7 +24,7 @@ loss_agg_mode="token-mean"
 
 enable_filter_groups=True
 filter_groups_metric=acc
-max_num_gen_batches=10
+max_num_gen_batches=30
 train_prompt_bsz=64
 gen_prompt_bsz=256
 n_resp_per_prompt=6
@@ -37,7 +37,8 @@ RUNTIME_ENV=${RUNTIME_ENV:-"${WORKING_DIR}/verl/trainer/runtime_env.yaml"}
 NNODES=${NNODES:-1}
 # Paths
 RAY_DATA_HOME=${RAY_DATA_HOME:-"/root/lai-code/verl"}
-MODEL_PATH=${MODEL_PATH:-"/root/lai-code/prime_model/fake_quant_model"}
+MODEL_PATH=${MODEL_PATH:-"/root/lai-code/quant_models/qwen3-4b-instruct/fake_quant_model"}
+# MODEL_PATH=${MODEL_PATH:-"/share/MY-DAPO/Qwen3-4B-AWQ-w4g128-Soft-Only/global_step_100_hf"}
 CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
 TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/dapomath17k_dedup.parquet"}
 TEST_FILE=${TEST_FILE:-"${RAY_DATA_HOME}/data/aime-2024.parquet"}
