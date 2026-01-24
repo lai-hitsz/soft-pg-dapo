@@ -54,6 +54,24 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 device_name = get_device_name()
 
 
+def freeze_for_fake_quant_training(model: torch.nn.Module):
+    # 1. 全部冻结
+    for p in model.parameters():
+        p.requires_grad = False
+
+    # 2. 只解冻 StepAwareFakeLinear.weight
+    for name, module in model.named_modules():
+        if isinstance(module, StepAwareFakeLinear):
+            if "lm_head" in name:
+                continue
+            if hasattr(module, "weight") and module.weight is not None:
+                module.weight.requires_grad = True
+                print(
+                f"[Train] {name}.weight | "
+                f"shape={tuple(module.weight.shape)} | "
+                f"requires_grad={module.weight.requires_grad}"
+            )
+
 class QuantActorRolloutRefWorker(ActorRolloutRefWorker):
     def __init__(self, config: DictConfig, role: str):
         """
@@ -194,6 +212,8 @@ class QuantActorRolloutRefWorker(ActorRolloutRefWorker):
                     skip_names=("lm_head",),
                     verbose=True,
                 )
+
+                freeze_for_fake_quant_training(actor_module)
             # =============================================== #
 
             # some parameters may not in torch_dtype. TODO(zhangchi.usc1992) remove this after we switch to fsdp2

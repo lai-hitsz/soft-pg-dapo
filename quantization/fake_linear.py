@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-CLIPMIN=1e-4
+CLIPMIN=1e-6
 
 
 def round_ste(x: torch.Tensor):
@@ -34,19 +34,18 @@ def round_soft(x: torch.Tensor, qmax: int):
 
 
 class WeightQuantizer(nn.Module):
-    def __init__(self, s_bits: int=4, t_bits: int=0, group_size: int=128):
+    def __init__(self, s_bits: int=4, t_bits: int=2, group_size: int=128):
         super().__init__()
         assert 2 <= s_bits <= 4 or s_bits == 16
         self.s_bits = s_bits
         self.t_bits = t_bits
-        self.qmin = 0
-        self.qmax_full = (1 << s_bits) - 1
-        self.qmax_final = (1 << t_bits) - 1
-        self.group_size = group_size
 
-        self.duration = None
-        if t_bits >= 2 and t_bits <= s_bits:
-            self.duration = self.qmax_full - self.qmax_final
+        self.qmin_full = 0
+        self.qmax_full = (1 << s_bits) - 1
+
+        self.qmax_target = (1 << t_bits) - 1
+        
+        self.group_size = group_size
 
     def fake_quant(
         self,
@@ -63,37 +62,33 @@ class WeightQuantizer(nn.Module):
 
         xmin = x.amin(dim=-1, keepdim=True)
         xmax = x.amax(dim=-1, keepdim=True)
-        scale = (xmax - xmin) / (self.qmax_full - self.qmin)
-        scale = scale.clamp(min=CLIPMIN)
 
-        x_fp = (x - xmin) / scale
-
-        # ---- progressive quantization ----
         if progressive_enable:
-            qmax_eff = int(
-                math.ceil(
-                    self.qmax_full
-                    - progressive_ratio * self.duration
-                )
-            )
+            qmax_eff = self.qmax_full - progressive_ratio * (self.qmax_full - self.qmax_target)
         else:
             qmax_eff = self.qmax_full
 
+        scale = (xmax - xmin) / (qmax_eff - self.qmin_full)
+        scale = scale.clamp(min=CLIPMIN)
+        zero = - xmin / scale
+
         # ---- base rounding (full bits) ----
+        z_int = torch.round(zero).detach()
         if soft_round_enable:
-            x_int = round_soft(x_fp, qmax_eff)
+            x_fp = x / scale + z_int
+            x_int = round_soft(x_fp, math.ceil(qmax_eff))
         else:
-            x_int = round_ste(x_fp)
+            x_fp = x / scale
+            x_int = round_ste(x_fp) + z_int
+            x_int = x_int.clamp(self.qmin_full, qmax_eff)
 
-        x_int = x_int.clamp(self.qmin, qmax_eff)
-
-        x_dequant = x_int * scale + xmin
+        x_dequant = (x_int - z_int) * scale
         return x_dequant.reshape(dim1, dim2)
 
     def forward(self, x: torch.Tensor, **kwargs):
-            if self.s_bits == 16:
-                return x
-            return self.fake_quant(x, **kwargs)
+        if self.s_bits == 16:
+            return x
+        return self.fake_quant(x, **kwargs)
 
 
 class StepAwareFakeLinear(nn.Module):
@@ -135,9 +130,6 @@ class StepAwareFakeLinear(nn.Module):
         self.progressive_ratio.fill_(float(state.progressive_ratio))
 
     def forward(self, input):
-        if self.soft_round_enable.item() == 0:
-            return F.linear(input, self.weight, self.bias)
-
         weight_q = self.fake_quant_weight(
             self.weight,
             soft_round_enable=bool(self.soft_round_enable.item()),

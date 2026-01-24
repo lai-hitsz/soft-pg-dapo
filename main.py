@@ -55,7 +55,6 @@ class TaskRunner:
         # ============================
         # FSDP ONLY
         # ============================
-        assert config.actor_rollout_ref.actor.strategy == "fsdp"
         assert config.actor_rollout_ref.actor.strategy == config.critic.strategy
 
         from verl.single_controller.ray import RayWorkerGroup

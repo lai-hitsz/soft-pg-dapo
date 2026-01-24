@@ -37,7 +37,8 @@ class QuantizationController:
 
     # ------------------------------------------------------------------
 
-    def _is_active(self, global_step: int) -> bool:
+    @property
+    def _is_active(self) -> bool:
         return self.enable
 
     def _compute_progressive_ratio(self, global_step: int) -> float:
@@ -60,39 +61,10 @@ class QuantizationController:
         soft_active = self.soft_round_enable
         prog_active = self.enable_progressive and global_step >= self.begin_pg
 
-        # ---- 00: progressive 0, soft 0 ----
-        if not prog_active and not soft_active:
-            return QuantState(
-                soft_round_enable=False,
-                progressive_enable=False,
-                progressive_ratio=prog_ratio
-            )
 
-        # ---- 10: progressive 1, soft 0 ----
-        elif prog_active and not soft_active:
-            return QuantState(
-                soft_round_enable=False,
-                progressive_enable=True,
-                progressive_ratio=prog_ratio,
-            )
+        return QuantState(
+            soft_round_enable=soft_active,
+            progressive_enable=prog_active,
+            progressive_ratio=prog_ratio
+        )
 
-        # ---- 01: progressive 0, soft 1 ----
-        elif not prog_active and soft_active:
-            # soft_step = self._compute_soft_round_step(global_step)
-            return QuantState(
-                soft_round_enable=True,
-                progressive_enable=False,
-                progressive_ratio=prog_ratio
-            )
-
-        # ---- 11: progressive 1, soft 1 ----
-        elif prog_active and soft_active:
-            # soft_step = self._compute_soft_round_step(global_step)
-            return QuantState(
-                soft_round_enable=True,
-                progressive_enable=True,
-                progressive_ratio=prog_ratio,
-            )
-
-        else:
-            raise RuntimeError("Invalid quantization state combination")
