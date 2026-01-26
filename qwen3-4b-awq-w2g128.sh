@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
 
-project_name='DAPO-TEST'
-exp_name='Qwen3-4B-AWQ-w4g128-Soft-Only-PG_t-2bit'
+project_name='DAPO-WITH-Z'
+exp_name='Qwen3-4B-w2g128-Soft-Only-freeze-lr_1e-4'
 
 adv_estimator=grpo
 
@@ -37,7 +37,7 @@ RUNTIME_ENV=${RUNTIME_ENV:-"${WORKING_DIR}/verl/trainer/runtime_env.yaml"}
 NNODES=${NNODES:-1}
 # Paths
 RAY_DATA_HOME=${RAY_DATA_HOME:-"/root/lai-code/verl"}
-MODEL_PATH=${MODEL_PATH:-"/share/Qwen3-4B-Instruct-2507"}
+MODEL_PATH=${MODEL_PATH:-"/root/lai-code/quant_models/qwen3-4b-instruct-2bit/fake_quant_model"}
 CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
 TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/dapomath17k_dedup.parquet"}
 TEST_FILE=${TEST_FILE:-"${RAY_DATA_HOME}/data/aime-2024.parquet"}
@@ -88,7 +88,7 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     actor_rollout_ref.rollout.log_prob_max_token_len_per_gpu=${infer_ppo_max_token_len} \
     actor_rollout_ref.model.path="${MODEL_PATH}" \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
-    actor_rollout_ref.actor.optim.lr=5e-4 \
+    actor_rollout_ref.actor.optim.lr=1e-4 \
     actor_rollout_ref.actor.optim.lr_warmup_steps=30 \
     actor_rollout_ref.actor.optim.weight_decay=0.1 \
     actor_rollout_ref.actor.ppo_mini_batch_size=${train_prompt_mini_bsz} \
@@ -129,7 +129,6 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     trainer.val_before_train=True \
     trainer.test_freq=5 \
     trainer.save_freq=50 \
-    trainer.total_epochs=10 \
+    trainer.total_epochs=20 \
     trainer.default_local_dir="${CKPTS_DIR}" \
     trainer.resume_mode=auto
-

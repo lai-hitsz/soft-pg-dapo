@@ -465,6 +465,8 @@ class QuantActorRolloutRefWorker(ActorRolloutRefWorker):
         use_shm = self.config.model.get("use_shm", False)
         use_fused_kernels = self.config.model.get("use_fused_kernels", False)
 
+        quant_config = self.config.quant
+        
         if self._is_actor or self._is_rollout:
             # we need the model for actor and rollout
             if self._is_actor:
@@ -474,8 +476,7 @@ class QuantActorRolloutRefWorker(ActorRolloutRefWorker):
                 optim_config = None
                 fsdp_config = OmegaConf.create()
 
-            quant_config = self.config.quant
-
+        
             local_path = copy_to_local(self.config.model.path, use_shm=use_shm)
             (
                 self.actor_module_fsdp,

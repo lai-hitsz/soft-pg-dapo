@@ -61,13 +61,15 @@ class RayDAPOTrainer(RayPPOTrainer):
         num_gen_batches = 0
 
         quant_controller = QuantizationController(self.config.actor_rollout_ref.quant)
-        if quant_controller.enable:
-            quant_state = quant_controller.get_state(self.global_steps)
-            self.actor_rollout_wg.set_quant_state(quant_state)
+        
 
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
                 metrics = {}
+
+                if quant_controller.enable:
+                    quant_state = quant_controller.get_state(self.global_steps)
+                    self.actor_rollout_wg.set_quant_state(quant_state)
 
                 new_batch: DataProto = DataProto.from_single_dict(batch_dict)
                 num_gen_batches += 1
@@ -184,6 +186,8 @@ class RayDAPOTrainer(RayPPOTrainer):
                                 progress_bar.update(1)
                                 continue
                             else:
+                                if num_gen_batches == 0:
+                                    self._save_checkpoint()
                                 raise ValueError(f"{num_gen_batches=} >= {max_num_gen_batches=}." + " Generated too many. Please check if your data are too difficult." + " You could also try set max_num_gen_batches=0 to enable endless trials.")
                         else:
                             # Align the batch
@@ -291,7 +295,3 @@ class RayDAPOTrainer(RayPPOTrainer):
 
                 progress_bar.update(1)
                 self.global_steps += 1
-
-                if quant_controller.enable:
-                    quant_state = quant_controller.get_state(self.global_steps)
-                    self.actor_rollout_wg.set_quant_state(quant_state)

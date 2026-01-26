@@ -37,13 +37,13 @@ actor_rollout_ref:
 
     # ===== bits 配置 =====
     bits:
-      start: 3
-      enable_progressive: False
+      start: 4
+      enable_progressive: True
       target: 3
       begin_pg: 1
       pg_duration: 100
 
     # ===== soft-round 配置 =====
     soft_round:
-      enable: False
+      enable: True
 

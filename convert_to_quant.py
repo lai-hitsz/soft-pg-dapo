@@ -112,7 +112,7 @@ def main():
     device_map = infer_auto_device_map(model, max_memory={i: args.max_memory for i in range(torch.cuda.device_count())}, no_split_module_classes=[block_class_name])
     model = dispatch_model(model, device_map=device_map)
 
-    convert_to_fake_quant(model, wbits=args.wbits, group_size=args.group_size)
+    convert_to_fake_quant(model, wbits=args.wbits, group_size=args.group_size, use_pg=args.use_pg, tbits=args.tbits)
     # test_model_quant_levels(model)
 
     evaluate_tasks(model, tokenizer, args, logger)

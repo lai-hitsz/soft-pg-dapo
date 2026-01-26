@@ -159,7 +159,7 @@ def convert_to_fake_quant(
         w: [out, in]
         return: fake-quantized w, still float tensor
         """
-        w_q = weight_quant(w, progressive_enable=use_pg, progressive_ratio=1, soft_round_enable=False)
+        w_q = weight_quant(w, progressive_enable=use_pg, progressive_ratio=0.16, soft_round_enable=False)
         return w_q
 
     for name, module in list(named_modules.items()):
