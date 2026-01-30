@@ -38,6 +38,11 @@ class RayDAPOTrainer(RayPPOTrainer):
         # load checkpoint before doing anything
         self._load_checkpoint()
 
+        quant_controller = QuantizationController(self.config.actor_rollout_ref.quant)
+        if quant_controller.enable:
+            quant_state = quant_controller.get_state(self.global_steps)
+            self.actor_rollout_wg.set_quant_state(quant_state)
+
         # perform validation before training
         # currently, we only support validation using the reward_function.
         if self.val_reward_fn is not None and self.config.trainer.get("val_before_train", True):
@@ -60,14 +65,13 @@ class RayDAPOTrainer(RayPPOTrainer):
         num_prompt_in_batch = 0
         num_gen_batches = 0
 
-        quant_controller = QuantizationController(self.config.actor_rollout_ref.quant)
-        if quant_controller.enable:
-            quant_state = quant_controller.get_state(self.global_steps)
-            self.actor_rollout_wg.set_quant_state(quant_state)
-
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
                 metrics = {}
+
+                if quant_controller.enable:
+                    quant_state = quant_controller.get_state(self.global_steps)
+                    self.actor_rollout_wg.set_quant_state(quant_state)
 
                 new_batch: DataProto = DataProto.from_single_dict(batch_dict)
                 num_gen_batches += 1
@@ -291,7 +295,3 @@ class RayDAPOTrainer(RayPPOTrainer):
 
                 progress_bar.update(1)
                 self.global_steps += 1
-
-                if quant_controller.enable:
-                    quant_state = quant_controller.get_state(self.global_steps)
-                    self.actor_rollout_wg.set_quant_state(quant_state)
