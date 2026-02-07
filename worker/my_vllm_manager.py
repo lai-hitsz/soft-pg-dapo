@@ -28,7 +28,8 @@ from verl.utils.torch_functional import check_device_is_available
 from verl.utils.vllm_utils import TensorLoRARequest, VLLMHijack, is_version_ge, patch_vllm_moe_model_weight_loader
 
 from verl.workers.sharding_manager.base import BaseShardingManager
-from ..quantization.fake_linear import StepAwareFakeLinear
+# from ..quantization.fake_linear import StepAwareFakeLinear
+from ..quantization.new_fake_linear import StepAwareFakeLinear
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
@@ -264,11 +265,17 @@ class FSDPVLLMShardingManager(BaseShardingManager):
         patch_vllm_moe_model_weight_loader(model)
         device = get_torch_device().current_device()
 
-        # 需要过滤掉的 buffer 名字
-        SKIP_KEYS = {"soft_round_enable", "progressive_enable", "progressive_ratio"}
+        SKIP_KEYS = {
+            "soft_round_enable",
+            "progressive_enable",
+            "progressive_ratio",
+            "cached_scale",
+            "cached_zero",
+            "cached_eff",
+            "cached_ready",
+        }
 
         def maybe_fake_quant(name, param):
-            # 如果名字中包含跳过的 buffer，直接返回 None
             if any(k in name for k in SKIP_KEYS):
                 return None
 

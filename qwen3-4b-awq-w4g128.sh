@@ -2,7 +2,8 @@
 set -xeuo pipefail
 
 project_name='DAPO-WITH-Z'
-exp_name='Qwen3-4B-Soft-PG-3bit-freeze-lr_1e-4'
+exp_name='Qwen3-4B-Soft-PG-2bit-V1-stage1'
+# exp_name='Qwen3-4B-w3g128-Soft-only-V1'
 
 adv_estimator=grpo
 
@@ -37,8 +38,8 @@ RUNTIME_ENV=${RUNTIME_ENV:-"${WORKING_DIR}/verl/trainer/runtime_env.yaml"}
 NNODES=${NNODES:-1}
 # Paths
 RAY_DATA_HOME=${RAY_DATA_HOME:-"/root/lai-code/verl"}
-# MODEL_PATH=${MODEL_PATH:-"/root/lai-code/quant_models/qwen3-4b-instruct/fake_quant_model"}
-MODEL_PATH=${MODEL_PATH:-"/share/MY-DAPO/DAPO-WITH-Z/Qwen3-4B-AWQ-w4g128-Soft-Only-freeze-lr_1e-4/global_step_50_hf"}
+# MODEL_PATH=${MODEL_PATH:-"/root/lai-code/quant_models/qwen3-4b-instruct-3bit/fake_quant_model"}
+MODEL_PATH=${MODEL_PATH:-"/share/MY-DAPO/DAPO-WITH-Z/Qwen3-4B-Soft-PG-3bit-V1-stage2/global_step_100_hf"}
 CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
 # TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/dapomath17k_dedup.parquet"}
 TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/dapo-math-17k.parquet"}
@@ -130,7 +131,7 @@ ray job submit --no-wait --runtime-env="${RUNTIME_ENV}" \
     trainer.nnodes="${NNODES}" \
     trainer.val_before_train=True \
     trainer.test_freq=5 \
-    trainer.save_freq=50 \
+    trainer.save_freq=100 \
     trainer.total_epochs=1 \
     trainer.default_local_dir="${CKPTS_DIR}" \
     trainer.resume_mode=auto

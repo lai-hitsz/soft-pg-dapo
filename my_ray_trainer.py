@@ -34,14 +34,19 @@ class RayDAPOTrainer(RayPPOTrainer):
         )
 
         self.global_steps = 0
+        last_gen_epochs = 0
+        last_level = 0
 
         # load checkpoint before doing anything
         self._load_checkpoint()
 
         quant_controller = QuantizationController(self.config.actor_rollout_ref.quant)
         if quant_controller.enable:
-            quant_state = quant_controller.get_state(self.global_steps)
-            self.actor_rollout_wg.set_quant_state(quant_state)
+            quant_state = quant_controller.get_level_state(self.global_steps)
+            # self.actor_rollout_wg.set_quant_state(quant_state)
+            # quant_state = quant_controller.get_batch_state(last_gen_epochs)
+            self.actor_rollout_wg.prepare_full_quant(quant_state)
+            # last_level = quant_controller._last_level
 
         # perform validation before training
         # currently, we only support validation using the reward_function.
@@ -69,9 +74,14 @@ class RayDAPOTrainer(RayPPOTrainer):
             for batch_dict in self.train_dataloader:
                 metrics = {}
 
-                if quant_controller.enable:
-                    quant_state = quant_controller.get_state(self.global_steps)
-                    self.actor_rollout_wg.set_quant_state(quant_state)
+                if quant_controller.enable and num_gen_batches == 0:
+                    quant_state = quant_controller.get_level_state(self.global_steps)
+                    # quant_state = quant_controller.get_state(self.global_steps)
+                    # self.actor_rollout_wg.set_quant_state(quant_state)
+                    # quant_state = quant_controller.get_batch_state(last_gen_epochs)
+                    # if quant_controller._last_level != last_level:
+                    self.actor_rollout_wg.prepare_full_quant(quant_state)
+                    # last_level = quant_controller._last_level
 
                 new_batch: DataProto = DataProto.from_single_dict(batch_dict)
                 num_gen_batches += 1
@@ -283,6 +293,7 @@ class RayDAPOTrainer(RayPPOTrainer):
                 metrics["train/num_gen_batches"] = num_gen_batches
                 batch = None
                 num_prompt_in_batch = 0
+                last_gen_epochs = num_gen_batches
                 num_gen_batches = 0
 
                 # TODO: make a canonical logger that supports various backend

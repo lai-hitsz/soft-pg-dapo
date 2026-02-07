@@ -6,6 +6,8 @@ import logging
 from .quantization.fake_linear import convert_to_fake_quant
 from accelerate import infer_auto_device_map, dispatch_model
 
+import os
+os.environ["HF_ALLOW_CODE_EVAL"] = "1"
 
 def setup_logger():
     logger = logging.getLogger("eval_logger")

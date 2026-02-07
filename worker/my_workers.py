@@ -1,6 +1,7 @@
-from verl.workers.fsdp_workers import ActorRolloutRefWorker, get_sharding_strategy, create_device_mesh
+from verl.workers.fsdp_workers import ActorRolloutRefWorker, get_sharding_strategy
 from ..quantization.quant_controller import QuantizationController
-from ..quantization.fake_linear import StepAwareFakeLinear
+# from ..quantization.fake_linear import StepAwareFakeLinear
+from ..quantization.new_fake_linear import StepAwareFakeLinear
 from ..quantization.utils import replace_modules, inject_to_modules
 
 import logging
@@ -16,8 +17,6 @@ from safetensors.torch import save_file
 from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
-import verl.utils.torch_functional as verl_F
-from verl import DataProto
 from verl.models.transformers.monkey_patch import apply_monkey_patch
 from verl.single_controller.base import Worker
 from verl.single_controller.base.decorator import Dispatch, register
@@ -25,7 +24,7 @@ from verl.utils import hf_processor, hf_tokenizer
 from verl.utils.activation_offload import enable_activation_offloading
 from verl.utils.checkpoint.fsdp_checkpoint_manager import FSDPCheckpointManager
 from verl.utils.debug import log_gpu_memory_usage
-from verl.utils.device import get_device_name, get_torch_device, is_cuda_available, is_npu_available
+from verl.utils.device import get_device_name, get_torch_device
 from verl.utils.flops_counter import FlopsCounter
 from verl.utils.fs import copy_to_local
 from verl.utils.fsdp_utils import (
@@ -37,16 +36,11 @@ from verl.utils.fsdp_utils import (
     get_fsdp_wrap_policy,
     get_init_weight_context_manager,
     init_fn,
-    layered_summon_lora_params,
-    load_fsdp_model_to_gpu,
-    load_fsdp_optimizer,
     offload_fsdp_model_to_cpu,
     offload_fsdp_optimizer,
 )
 from verl.utils.import_utils import import_external_libs
-from verl.utils.model import compute_position_id_with_mask
 from verl.utils.py_functional import convert_to_regular_types
-from verl.workers.sharding_manager.fsdp_ulysses import FSDPUlyssesShardingManager
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
@@ -555,12 +549,39 @@ class QuantActorRolloutRefWorker(ActorRolloutRefWorker):
         """
         Broadcast quantization state to all StepAwareFakeLinear modules
         """
-        inject_to_modules(
-            model=self.actor_module_fsdp,
-            module_type=StepAwareFakeLinear,
-            attr_name="_quant_state",
-            value=quant_state,
-            use_setter=True,
-        )
+        def _set_state(module):
+            if isinstance(module, StepAwareFakeLinear):
+                module.set_quant_state(quant_state)
+
+        self.actor_module_fsdp.apply(_set_state)
+
+    
+    @register(dispatch_mode=Dispatch.ONE_TO_ALL)
+    def prepare_full_quant(self, quant_state):
+        fsdp_root = self.actor_module_fsdp
+
+        # 1. 显式 unshard
+        fsdp_root.unshard(async_op=False)
+
+        try:
+            # 2. 遍历模块，准备 full tensor
+            for module in fsdp_root.modules():
+                if isinstance(module, StepAwareFakeLinear):
+                    module.set_quant_state(quant_state)
+
+                    w = module.weight
+                    if hasattr(w, "full_tensor"):
+                        w_full = w.full_tensor()
+                    else:
+                        w_full = w
+
+                    # 3. 传入 full tensor
+                    module.prepare_shard_quant(w_full)
+
+        finally:
+            # 4. 显式 reshard，恢复 FSDP shard
+            fsdp_root.reshard()
+
+
 
 
