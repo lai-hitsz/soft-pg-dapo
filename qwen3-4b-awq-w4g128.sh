@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
 
-project_name='DAPO-WITH-Z'
-exp_name='Qwen3-4B-Soft-PG-2bit-V1-stage1'
+project_name='QWEN3-4B-DAPO'
+exp_name='Soft-PG-2bit-300step'
 # exp_name='Qwen3-4B-w3g128-Soft-only-V1'
 
 adv_estimator=grpo
@@ -39,7 +39,7 @@ NNODES=${NNODES:-1}
 # Paths
 RAY_DATA_HOME=${RAY_DATA_HOME:-"/root/lai-code/verl"}
 # MODEL_PATH=${MODEL_PATH:-"/root/lai-code/quant_models/qwen3-4b-instruct-3bit/fake_quant_model"}
-MODEL_PATH=${MODEL_PATH:-"/share/MY-DAPO/DAPO-WITH-Z/Qwen3-4B-Soft-PG-3bit-V1-stage2/global_step_100_hf"}
+MODEL_PATH=${MODEL_PATH:-"/share/MY-DAPO/DAPO-WITH-Z/Qwen3-4B-AWQ-w4g128-Soft-Only-freeze-lr_1e-4/global_step_50_hf"}
 CKPTS_DIR=${CKPTS_DIR:-"${RAY_DATA_HOME}/ckpts/${project_name}/${exp_name}"}
 # TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/dapomath17k_dedup.parquet"}
 TRAIN_FILE=${TRAIN_FILE:-"${RAY_DATA_HOME}/data/dapo-math-17k.parquet"}

@@ -32,6 +32,52 @@ def round_soft(x: torch.Tensor, qmax: int):
 
     return delta
 
+def round_soft_aligned_general(
+    x: torch.Tensor,
+    *,
+    s_bits: int,       # full bits, e.g. 4
+    t_bits: int,       # low bits, e.g. 2 or 3
+    t: float = 1000.0,
+):
+    """
+    Low-bit soft rounding embedded into full-bit integer lattice.
+
+    Output range: [0, 2^s_bits - 1]
+    """
+    device = x.device
+    dtype = x.dtype
+
+    qmax_s = (1 << s_bits) - 1
+    qmax_t = (1 << t_bits) - 1
+
+    assert qmax_s >= qmax_t
+    assert qmax_s % qmax_t == 0 or qmax_t > 1
+
+    # ---- compute full-lattice indices to keep ----
+    # k_i = floor((i + 0.5) * qmax_s / qmax_t)
+    i = torch.arange(
+        qmax_t,
+        device=device,
+        dtype=dtype,
+    )
+
+    k = torch.floor((i + 0.5) * qmax_s / qmax_t)
+
+    # ensure valid range
+    k = k.clamp(min=0, max=qmax_s - 1)
+
+    # shape: (num_steps, 1, ..., 1)
+    k = k.view(-1, *([1] * x.dim()))
+
+    t = x.new_tensor(t)
+
+    term1 = torch.tanh(t * (x.unsqueeze(0) - (k + 0.5)))
+    term2 = torch.tanh(t * (k + 0.5))
+    denom = 2.0 * torch.tanh(t)
+
+    delta = (qmax_s / qmax_t) * (term1 + term2).sum(dim=0) / denom
+    return delta
+
 
 class WeightQuantizer(nn.Module):
     def __init__(self, s_bits: int=4, t_bits: int=2, group_size: int=128):
@@ -63,12 +109,7 @@ class WeightQuantizer(nn.Module):
         xmin = x.amin(dim=-1, keepdim=True)
         xmax = x.amax(dim=-1, keepdim=True)
 
-        if progressive_enable:
-            qmax_eff = self.qmax_full - progressive_ratio * (self.qmax_full - self.qmax_target)
-        else:
-            qmax_eff = self.qmax_full
-
-        scale = (xmax - xmin) / (qmax_eff - self.qmin_full)
+        scale = (xmax - xmin) / (self.qmax_full - self.qmin_full)
         scale = scale.clamp(min=CLIPMIN)
         zero = - xmin / scale
 
@@ -76,11 +117,21 @@ class WeightQuantizer(nn.Module):
         z_int = torch.round(zero).detach()
         if soft_round_enable:
             x_fp = x / scale + z_int
-            x_int = round_soft(x_fp, math.ceil(qmax_eff))
+            x_int = round_soft(x_fp, math.ceil(self.qmax_full))
+
+            if progressive_enable:
+                x_int_t = round_soft_aligned_general(
+                    x_fp,
+                    s_bits=self.s_bits,
+                    t_bits=self.t_bits,
+                    t=1000.0,
+                )
+                x_int = (1 - progressive_ratio) * x_int + progressive_ratio * x_int_t
         else:
             x_fp = x / scale
             x_int = round_ste(x_fp) + z_int
-            x_int = x_int.clamp(self.qmin_full, qmax_eff)
+            x_int = x_int.clamp(self.qmin_full, self.qmax_full)
+
 
         x_dequant = (x_int - z_int) * scale
         return x_dequant.reshape(dim1, dim2)
@@ -160,6 +211,42 @@ def convert_to_fake_quant(
         return: fake-quantized w, still float tensor
         """
         w_q = weight_quant(w, progressive_enable=use_pg, progressive_ratio=1, soft_round_enable=False)
+        return w_q
+
+    for name, module in list(named_modules.items()):
+        if not isinstance(module, nn.Linear):
+            continue
+        if "lm_head" in name:
+            continue
+
+        w = module.weight.data
+        w_q = fake_quant_weight(w)
+        module.weight.data.copy_(w_q)
+
+    return model
+
+
+@torch.no_grad()
+def convert_to_fake_quant(
+    model: nn.Module,
+    wbits: int = 4,
+    group_size: int = 128,
+    use_pg: bool | None = None,
+    tbits: int = 0,
+):
+    named_modules = dict(model.named_modules())
+    weight_quant = WeightQuantizer(
+        s_bits=wbits,
+        t_bits=tbits,
+        group_size=group_size
+    )
+
+    def fake_quant_weight(w: torch.Tensor) -> torch.Tensor:
+        """
+        w: [out, in]
+        return: fake-quantized w, still float tensor
+        """
+        w_q = weight_quant(w, progressive_enable=use_pg, progressive_ratio=1, soft_round_enable=True)
         return w_q
 
     for name, module in list(named_modules.items()):

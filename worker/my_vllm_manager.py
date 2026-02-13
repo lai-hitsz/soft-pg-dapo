@@ -29,7 +29,8 @@ from verl.utils.vllm_utils import TensorLoRARequest, VLLMHijack, is_version_ge, 
 
 from verl.workers.sharding_manager.base import BaseShardingManager
 # from ..quantization.fake_linear import StepAwareFakeLinear
-from ..quantization.new_fake_linear import StepAwareFakeLinear
+# from ..quantization.new_fake_linear import StepAwareFakeLinear
+from ..quantization.step_aware_linear import StepAwareFakeLinear
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))

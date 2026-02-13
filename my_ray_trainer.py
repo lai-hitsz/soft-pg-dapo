@@ -42,10 +42,10 @@ class RayDAPOTrainer(RayPPOTrainer):
 
         quant_controller = QuantizationController(self.config.actor_rollout_ref.quant)
         if quant_controller.enable:
-            quant_state = quant_controller.get_level_state(self.global_steps)
-            # self.actor_rollout_wg.set_quant_state(quant_state)
+            quant_state = quant_controller.get_state(self.global_steps)
+            self.actor_rollout_wg.set_quant_state(quant_state)
             # quant_state = quant_controller.get_batch_state(last_gen_epochs)
-            self.actor_rollout_wg.prepare_full_quant(quant_state)
+            # self.actor_rollout_wg.prepare_full_quant(quant_state)
             # last_level = quant_controller._last_level
 
         # perform validation before training
@@ -75,12 +75,11 @@ class RayDAPOTrainer(RayPPOTrainer):
                 metrics = {}
 
                 if quant_controller.enable and num_gen_batches == 0:
-                    quant_state = quant_controller.get_level_state(self.global_steps)
-                    # quant_state = quant_controller.get_state(self.global_steps)
-                    # self.actor_rollout_wg.set_quant_state(quant_state)
+                    quant_state = quant_controller.get_state(self.global_steps)
+                    self.actor_rollout_wg.set_quant_state(quant_state)
                     # quant_state = quant_controller.get_batch_state(last_gen_epochs)
                     # if quant_controller._last_level != last_level:
-                    self.actor_rollout_wg.prepare_full_quant(quant_state)
+                    # self.actor_rollout_wg.prepare_full_quant(quant_state)
                     # last_level = quant_controller._last_level
 
                 new_batch: DataProto = DataProto.from_single_dict(batch_dict)

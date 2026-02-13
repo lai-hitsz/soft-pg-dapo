@@ -1,7 +1,8 @@
 from verl.workers.fsdp_workers import ActorRolloutRefWorker, get_sharding_strategy
 from ..quantization.quant_controller import QuantizationController
 # from ..quantization.fake_linear import StepAwareFakeLinear
-from ..quantization.new_fake_linear import StepAwareFakeLinear
+# from ..quantization.new_fake_linear import StepAwareFakeLinear
+from ..quantization.step_aware_linear import StepAwareFakeLinear
 from ..quantization.utils import replace_modules, inject_to_modules
 
 import logging
