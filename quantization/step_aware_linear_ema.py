@@ -14,6 +14,8 @@ from .utils import get_named_linears, set_op_by_name
 
 CLIPMIN=1e-6
 
+TRAINING_MODE   = 0
+INFER_MODE      = 1
 
 def round_ste(x: torch.Tensor):
     """
@@ -22,8 +24,8 @@ def round_ste(x: torch.Tensor):
     return (x.round() - x).detach() + x
 
 
-def round_soft(x: torch.Tensor, qmax: int, t: float = 10.0,):
-    t = x.new_tensor(t)
+def round_soft(x: torch.Tensor, qmax: int):
+    t = x.new_tensor(1000.0)
 
     k = torch.arange(
         qmax,
@@ -48,48 +50,40 @@ def round_soft_aligned_general(
     t: float = 1000.0,
 ):
     """
-    Soft rounding onto a target lattice embedded in source lattice.
-
-    Args
-    ----
-    x   : float tensor (pre-quantized value)
-    s_c : source lattice count (e.g. 16)
-    t_c : target lattice count (e.g. 14)
-    t   : temperature
-
-    Returns
-    -------
-    soft quantized integer
+    Low-bit soft rounding embedded into full-bit integer lattice.
     """
-
-    if s_c == t_c:
-        # equivalent to soft round
-        return round_soft(x, s_c - 1, t)
-
     device = x.device
     dtype = x.dtype
 
     qmax_s = s_c - 1
     qmax_t = t_c - 1
 
-    i = torch.arange(qmax_t, device=device, dtype=dtype)
+    assert qmax_s >= qmax_t
+    assert qmax_t > 1
 
-    # aligned bin centers
+    # ---- compute full-lattice indices to keep ----
+    # k_i = floor((i + 0.5) * qmax_s / qmax_t)
+    i = torch.arange(
+        qmax_t,
+        device=device,
+        dtype=dtype,
+    )
+
     k = torch.floor((i + 0.5) * qmax_s / qmax_t)
 
-    k = k.clamp(0, qmax_s - 1)
+    # ensure valid range
+    k = k.clamp(min=0, max=qmax_s-1)
 
+    # shape: (num_steps, 1, ..., 1)
     k = k.view(-1, *([1] * x.dim()))
 
     t = x.new_tensor(t)
 
     term1 = torch.tanh(t * (x.unsqueeze(0) - (k + 0.5)))
     term2 = torch.tanh(t * (k + 0.5))
-
     denom = 2.0 * torch.tanh(t)
 
     delta = (qmax_s / qmax_t) * (term1 + term2).sum(dim=0) / denom
-
     return delta
 
 
@@ -105,11 +99,13 @@ class WeightQuantizer(nn.Module):
         self.qmax_target = (1 << t_bits) - 1
 
         self.group_size = group_size
+        self.ema_decay = 0.99
 
-        self.begin_levels = 16
-        self.end_levels = 12
-        self.temperature = 5.0
+        self.register_buffer("running_xmin",torch.empty(1,1))
+        self.register_buffer("running_xmax",torch.empty(1,1))
 
+        self.initialized = False
+        self.mode = TRAINING_MODE
 
     def fake_quant(
         self,
@@ -127,6 +123,18 @@ class WeightQuantizer(nn.Module):
         xmin = x.amin(dim=-1, keepdim=True)
         xmax = x.amax(dim=-1, keepdim=True)
 
+        if self.mode == TRAINING_MODE:
+            if not self.initialized:
+                self.running_xmin = xmin.detach().clone()
+                self.running_xmax = xmax.detach().clone()
+                self.initialized = True
+            else:
+                self.running_xmin.mul_(self.ema_decay).add_(xmin.detach() * (1 - self.ema_decay))
+                self.running_xmax.mul_(self.ema_decay).add_(xmax.detach() * (1 - self.ema_decay))
+
+        xmin = self.running_xmin
+        xmax = self.running_xmax
+
         scale = (xmax - xmin) / (self.qmax_full - self.qmin_full)
         scale = scale.clamp(min=CLIPMIN)
         zero = - xmin / scale
@@ -135,21 +143,16 @@ class WeightQuantizer(nn.Module):
         z_int = torch.round(zero).detach()
         if soft_round_enable:
             x_fp = x / scale + z_int
-            x_int = round_soft_aligned_general(
-                    x_fp,
-                    s_c=self.qmax_full+1,
-                    t_c=self.begin_levels,
-                    t=self.temperature,
-                )
+            x_int = round_soft(x_fp, math.ceil(self.qmax_full))
             if progressive_enable:
                 x_int_t = round_soft_aligned_general(
                     x_fp,
-                    s_c=self.qmax_full + 1,
-                    t_c=self.end_levels,
-                    t=self.temperature,
+                    s_c=self.qmax_full+1,
+                    t_c=self.qmax_target+1,
+                    t=1000.0,
                 )
                 # ΔW = Q2 - Q4
-                delta = (x_int_t - x_int)
+                delta = (x_int_t - x_int).detach()
                 # Q4 + r ΔW
                 x_int = x_int + progressive_ratio * delta
         else:
@@ -233,11 +236,8 @@ def convert_to_fake_quant(model):
         qweight = module.fake_quant_weight(
             weight,
             soft_round_enable=bool(module.soft_round_enable.item()),
-            # soft_round_enable=True,
             progressive_enable=bool(module.progressive_enable.item()),
-            # progressive_enable=False,
-            progressive_ratio=module.progressive_ratio.item(),
-            # progressive_ratio=0.0,
+            progressive_ratio=module.progressive_ratio.item()
         )
 
         # ---------- build new Linear ----------
@@ -259,6 +259,50 @@ def convert_to_fake_quant(model):
 
     print("Conversion finished.")
 
+
+def load_running_stats(model_path: str):
+    print("Inferring running stats shape from checkpoint...")
+
+    safetensor_files = [f for f in os.listdir(model_path) if f.endswith(".safetensors")]
+    
+    if not safetensor_files:
+        raise ValueError("No .safetensors files found in the model path.")
+
+    running_shapes = {}
+
+    # 遍历所有safetensor文件
+    for safetensor_file in safetensor_files:
+        safetensor_path = os.path.join(model_path, safetensor_file)
+
+        with safe_open(safetensor_path, framework="pt", device="cpu") as f:
+            for k in f.keys():
+                if "running_xmin" in k or "running_xmax" in k:
+                    running_shapes[k] = f.get_tensor(k).shape
+                    print(f"matched: {k} {f.get_tensor(k).shape}")
+
+    return running_shapes
+
+def update_buffers_from_checkpoint(model, running_shapes):
+    # ---------- allocate buffers from checkpoint ----------
+    for ckpt_key, shape in running_shapes.items():
+
+        if ckpt_key.endswith("running_xmin"):
+            module_path = ckpt_key[:-len(".running_xmin")]
+            try:
+                module = model.get_submodule(module_path)
+                module._buffers["running_xmin"] = torch.zeros(shape)
+                # print(f"set xmin: {module_path} {shape}")
+            except Exception:
+                continue
+
+        if ckpt_key.endswith("running_xmax"):
+            module_path = ckpt_key[:-len(".running_xmax")]
+            try:
+                module = model.get_submodule(module_path)
+                module._buffers["running_xmax"] = torch.zeros(shape)
+                # print(f"set xmax: {module_path} {shape}")
+            except Exception:
+                continue
 
 def load_stepaware_model(model_path: str, wbits: int = 4, tbits: int = 2, group_size: int = 128):
     print(f"Loading StepAware model from {model_path}")
@@ -283,12 +327,19 @@ def load_stepaware_model(model_path: str, wbits: int = 4, tbits: int = 2, group_
         named_linears = get_named_linears(layer, torch.nn.Linear)
         for name, module in named_linears.items():
             q_linear = StepAwareFakeLinear(module, s_bits=wbits, t_bits=tbits, group_size=group_size)
+            q_linear.fake_quant_weight.mode = INFER_MODE
             
             set_op_by_name(layer, name, q_linear)
 
     model.tie_weights()
 
     device_map = infer_auto_device_map(model)
+
+    # ---------- load running stats (xmin, xmax) ----------
+    running_shapes = load_running_stats(model_path)
+
+    # ---------- update buffers based on running stats ----------
+    update_buffers_from_checkpoint(model, running_shapes)
 
     # ---------- load checkpoint ----------
     print("Loading checkpoint...")

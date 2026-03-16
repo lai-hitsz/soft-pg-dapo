@@ -29,11 +29,11 @@ class QuantizationController:
         self.start = int(bits_cfg.get("start", 4))
         self.target = int(bits_cfg.get("target", 3))
         self.pg_duration = int(bits_cfg.get("pg_duration", 200))  # duration for ratio 0->1
-        self.enable_progressive = bool(bits_cfg.get("enable_progressive", False))
+        self.enable_progressive = bool(bits_cfg.get("enable_progressive", True))
 
         # ===== soft-round =====
         soft_cfg = quant_cfg.get("soft_round", {})
-        self.soft_round_enable = bool(soft_cfg.get("enable", False))
+        self.soft_round_enable = bool(soft_cfg.get("enable", True))
 
         if self.enable_progressive:
             assert self.begin_pg >= 0, "begin_pg must be >= 0 when progressive is enabled"

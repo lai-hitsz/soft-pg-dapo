@@ -32,7 +32,7 @@ def run_ppo(config) -> None:
     ray.get(runner.run.remote(config))
 
 
-@ray.remote(num_cpus=1)
+@ray.remote(num_cpus=1,num_gpus=4)
 class TaskRunner:
     def run(self, config):
         from pprint import pprint

@@ -3,7 +3,7 @@ from ..quantization.quant_controller import QuantizationController
 # from ..quantization.fake_linear import StepAwareFakeLinear
 # from ..quantization.new_fake_linear import StepAwareFakeLinear
 from ..quantization.step_aware_linear import StepAwareFakeLinear
-from ..quantization.utils import replace_modules, inject_to_modules
+from ..quantization.utils import replace_modules
 
 import logging
 import os

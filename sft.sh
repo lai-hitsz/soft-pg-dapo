@@ -1,0 +1,27 @@
+CUDA_VISIBLE_DEVICES=4,5,6,7 python -m recipe.soft_gq_dapo.main_sft \
+    --quant_model_path /share/MY-DAPO/DAPO-WITH-Z/Qwen3-4B-AWQ-w4g128-Soft-Only-freeze-lr_1e-4/global_step_50_hf \
+    --model_family Qwen-3 \
+    --wbits 4 \
+    --tbits 2 \
+    --group_size 128 \
+    --pg_duration 500 \
+    --learning_rate 1e-5 \
+    --dataset metamathqa \
+    --dataset_format metamath \
+    --output_dir ./output/Qwen3-4B-4-2bit-500step \
+    --do_train True \
+    --source_max_len 1024 \
+    --target_max_len 1024 \
+    --per_device_train_batch_size 4 \
+    --per_device_eval_batch_size 4 \
+    --gradient_accumulation_steps 4 \
+    --logging_steps 10 \
+    --save_strategy steps \
+    --evaluation_strategy steps \
+    --max_steps 10000 \
+    --eval_steps 200 \
+    --eval_dataset_size 16 \
+    --bf16 \
+    --data_seed 42 \
+    --max_grad_norm 0.3 \
+    --group_by_length
