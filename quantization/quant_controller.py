@@ -27,7 +27,7 @@ class QuantizationController:
         bits_cfg = quant_cfg.get("bits", {})
         self.begin_pg = int(bits_cfg.get("begin_pg", 0))
         self.start = int(bits_cfg.get("start", 4))
-        self.target = int(bits_cfg.get("target", 3))
+        self.target = int(bits_cfg.get("target", 2))
         self.pg_duration = int(bits_cfg.get("pg_duration", 200))  # duration for ratio 0->1
         self.enable_progressive = bool(bits_cfg.get("enable_progressive", True))
 

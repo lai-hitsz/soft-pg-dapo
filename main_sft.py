@@ -30,7 +30,8 @@ from tqdm import tqdm
 from .sft.datautil import make_data_module
 from .sft.my_callback import QuantizationCallback
 from .quantization.quant_controller import QuantizationController
-from .quantization.step_aware_linear import StepAwareFakeLinear
+# from .quantization.step_aware_linear import StepAwareFakeLinear
+from .quantization.fourier_linear import StepAwareFakeLinear
 from .quantization.utils import get_named_linears, set_op_by_name
 
 
